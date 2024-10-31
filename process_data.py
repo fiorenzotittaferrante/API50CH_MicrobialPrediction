@@ -1,6 +1,8 @@
-import os, warnings
+import os, sys, warnings
 import pandas as pd
-from imblearn.under_sampling import NeighbourhoodCleaningRule
+
+sys.path.append('Code/')
+from utility import downsampling
 
 warnings.filterwarnings("ignore")
 
