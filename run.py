@@ -22,10 +22,9 @@ def train_models(dataset_folder):
 
     print("\nTraining...")
     balanced_models, unbalanced_models = train.main(X, y_balanced, resampled_dataframes)
-    # outlier_models = outlierDetection.main(X, y_od)
+    outlier_models = outlierDetection.main(X, y_od)
 
-    models = balanced_models | unbalanced_models # | outlier_models
-    # models = outlier_models
+    models = balanced_models | unbalanced_models | outlier_models
 
     return models
 
@@ -44,7 +43,8 @@ if __name__ == "__main__":
     X = load_data("Data/new_input.xlsx")
     result = evaluate.evaluate(models, X)
     
+    print(f"\nPredictions saved in Result/prediction.xlsx.\n")
     save_to_excel(result, path="Result/prediction.xlsx")
 
-    print(f"\nPredictions saved in Result/prediction.xlsx.\n")
+    print(result)
 

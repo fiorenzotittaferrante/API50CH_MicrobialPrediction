@@ -2,6 +2,7 @@ import os, random, warnings, sys
 import numpy as np
 import pandas as pd
 from itertools import product
+from statistics import mode
 
 import sklearn
 from sklearn import tree
@@ -9,7 +10,12 @@ from sklearn.model_selection import LeaveOneOut, GridSearchCV
 
 # Import custom libraries.
 sys.path.append('Code/')
-from utility import calculate_metrics, downsampling
+from utility import calculate_metrics, downsampling, save_to_excel
+
+
+# used in train_wit_rf
+from sklearn.ensemble import VotingClassifier
+from sklearn.metrics import f1_score
 
 
 def load_params(path):
@@ -87,41 +93,60 @@ def feature_intersection(X, y, sensibility=1, two_tail=False):
 
 def train(X, y, negative_sensibility=0.55, positive_sensibility=0.75, k=50, best_params=None, excluded=None):
     """
-    Train decision tree classifiers using a Leave-One-Out (LOO) cross-validation approach 
-    with outlier detection and feature selection based on specified sensitivity thresholds.
+    Train decision tree classifiers using Leave-One-Out (LOO) cross-validation with 
+    outlier detection and feature selection. This function implements six feature selection 
+    techniques to train individual decision trees, ultimately forming a forest of models and 
+    selecting the best-performing one based on evaluation metrics.
 
-    This function iterates over each carbohydrate in the provided labels (`y`), excluding 
-    any specified carbohydrates, and trains multiple decision tree models on the positive 
-    samples while incorporating selected negative samples for each iteration. It computes 
-    relevant metrics for model evaluation and returns a DataFrame containing performance metrics 
-    for each carbohydrate.
+    The function iterates over each carbohydrate in the target labels (`y`), excluding any 
+    specified in the `excluded` parameter. For each carbohydrate, it trains multiple decision 
+    trees based on positive samples and selected negative samples. After generating a forest 
+    of decision trees for each feature selection method, the model evaluates each forest 
+    and selects the one with the best performance.
 
     Args:
         X (pd.DataFrame): The feature dataset containing the input variables.
-        y (pd.DataFrame): The target labels for the training, where each column corresponds 
-                          to a different carbohydrate.
-        negative_sensibility (float, optional): Sensitivity threshold for selecting negative 
-                                                 features. Default is 0.55.
-        positive_sensibility (float, optional): Sensitivity threshold for selecting positive 
-                                                 features. Default is 0.75.
+        y (pd.DataFrame): The target labels for training, where each column corresponds to 
+                          a different carbohydrate.
+        negative_sensibility (float, optional): Sensitivity threshold for selecting features 
+                                                based on negative samples. Default is 0.55.
+        positive_sensibility (float, optional): Sensitivity threshold for selecting features 
+                                                based on positive samples. Default is 0.75.
         k (int, optional): The number of top features to select based on their impact ratios. 
                            Default is 50.
-        best_params (pd.DataFrame, optional): A DataFrame containing best hyperparameters for 
-                                               the models. If provided, overrides the default 
-                                               sensibility values and `k`.
+        best_params (pd.DataFrame, optional): A DataFrame containing optimized hyperparameters 
+                                              for the models. If provided, it overrides the 
+                                              default values for `negative_sensibility`, 
+                                              `positive_sensibility`, and `k`.
         excluded (list, optional): A list of carbohydrates to exclude from training.
 
     Returns:
         tuple: A tuple containing:
-            - pd.DataFrame: A DataFrame containing performance metrics for each carbohydrate.
-            - dict: A dictionary of trained models for each carbohydrate.
+            - pd.DataFrame: A DataFrame with performance metrics for each carbohydrate,
+                            including precision, recall, F1 scores, and balanced accuracy.
+            - dict: A dictionary containing the best-trained forest for each carbohydrate,
+                    identified based on F1 scores.
+
+    Function Details:
+        - For each carbohydrate, Leave-One-Out cross-validation is performed on positive 
+          samples, each time training on a subset and testing on a single sample.
+        - Six different feature selection methods are used to train individual decision trees, 
+          resulting in six distinct forests.
+        - For each sample, a selected set of negative samples is added to account for potential 
+          outliers.
+        - Each forest is evaluated on F1 scores, and the forest with the highest F1 score 
+          (for the positive class) is selected as the best-performing forest for that carbohydrate.
     """
-        
+
     output = pd.DataFrame(columns=['Carbohydrates', 'Model', 'Estimators', 'Pos real', 'Pos pred', 'Precision', 'Recall', 'F1 score class 0', 'F1 score class 1', 'Micro', 'Macro', 'Balanced accuracy', 'Misc'])
-    trained_models = {}
+    trained_forests = {}
 
     for carbohydrate in y.columns:
-        
+        best_f1_score = 0
+        best_forest_name = None
+        best_forest = None
+        best_tmp = None
+
         if excluded is None or carbohydrate in excluded:
             continue
             
@@ -130,31 +155,20 @@ def train(X, y, negative_sensibility=0.55, positive_sensibility=0.75, k=50, best
             positive_sensibility = best_params.loc[carbohydrate, 'positive_sensibility']
             k = best_params.loc[carbohydrate, 'k']
         
-        models = {
-            'DT-FS': [[], [], [], [], [], [], []],
-        }
-
+        models = {'DT-FS': [[], [], [], [], [], [], []]}
         y_col = y[carbohydrate]
-        loo = LeaveOneOut()     
+        loo = LeaveOneOut() 
                     
         positive_X = X[y_col == 1]
         positive_y = y_col[y_col.index.isin(positive_X.index)]
-        
         negative_X = X[y_col == 0]
         negative_y = y_col[y_col.index.isin(negative_X.index)]  
         
         np.random.seed(123456)
 
-        # Models for each feature selection technique.
-        feature_models = {f'FS{i}': [] for i in range(1, 7)}
+        # Collect trees for each feature selection method
+        feature_forests = {f'FS{i}': [] for i in range(1, 7)}
 
-        tree_1 = tree.DecisionTreeClassifier(max_depth=None, random_state=123456)
-        tree_2 = tree.DecisionTreeClassifier(max_depth=None, random_state=123456)
-        tree_3 = tree.DecisionTreeClassifier(max_depth=None, random_state=123456)
-        tree_4 = tree.DecisionTreeClassifier(max_depth=None, random_state=123456)
-        tree_5 = tree.DecisionTreeClassifier(max_depth=None, random_state=123456)
-        tree_6 = tree.DecisionTreeClassifier(max_depth=None, random_state=123456)
-                  
         for i, (train_index, test_index) in enumerate(loo.split(positive_X)):
 
             X_train, X_test = positive_X.iloc[train_index], positive_X.iloc[test_index]
@@ -168,10 +182,10 @@ def train(X, y, negative_sensibility=0.55, positive_sensibility=0.75, k=50, best
             X_train_negative, y_train_negative = X.loc[train_indices], y[carbohydrate].loc[train_indices]
             X_test_negative, y_test_negative = X.loc[test_indices], y[carbohydrate].loc[test_indices]
             
-            a = X_train.apply(lambda col: (col >= 1).sum())/len(X_train)
-            b = X_train_negative.apply(lambda col: (col == 0).sum())/len(X_train_negative)
+            a = X_train.apply(lambda col: (col >= 1).sum()) / len(X_train)
+            b = X_train_negative.apply(lambda col: (col == 0).sum()) / len(X_train_negative)
             
-            # Features selection.
+            # Feature selection for six methods
             negative_selected_features = feature_intersection(X_train_negative, y_train_negative, sensibility=negative_sensibility, two_tail=False)
             positive_selected_features_1 = feature_intersection(X_train, y_train)
             positive_selected_features_2 = feature_intersection(X_train, y_train, sensibility=positive_sensibility)
@@ -185,42 +199,53 @@ def train(X, y, negative_sensibility=0.55, positive_sensibility=0.75, k=50, best
             X_test = pd.concat([X_test, X_test_negative], axis=0)
             y_test = pd.concat([y_test, y_test_negative], axis=0)
             
-            # Training and prediction.
-            selected_columns_1 = X_train.columns[positive_selected_features_1 == 1]
-            selected_columns_2 = X_train.columns[positive_selected_features_2 == 1]
-            selected_columns_3 = X_train.columns[positive_selected_features_3 == 1]
-            selected_columns_4 = X_train.columns[positive_selected_features_4 == 1]
-            
-            models['DT-FS'][0].extend(y_test)
-            
-            for tree_idx, (tree_model, selected_columns) in enumerate(
-                [
-                    (tree_1, selected_columns_1),
-                    (tree_2, selected_columns_2),
-                    (tree_3, selected_columns_3),
-                    (tree_4, selected_columns_4),
-                    (tree_5, positive_selected_features_5),
-                    (tree_6, positive_selected_features_6),
-                ]
+            # Training six trees with different feature sets
+            for idx, (features, tree_model) in enumerate(
+                zip(
+                    [positive_selected_features_1, positive_selected_features_2, positive_selected_features_3, 
+                     positive_selected_features_4, positive_selected_features_5, positive_selected_features_6],
+                    [tree.DecisionTreeClassifier(max_depth=None, random_state=123456) for _ in range(6)]
+                )
             ):
-                if len(selected_columns) == 0:
-                    models['DT-FS'][tree_idx + 1].extend([0] * len(y_test))
-                    continue
+                selected_columns = X_train.columns[features == 1] if isinstance(features, pd.Series) else features
+                if len(selected_columns) > 0:
+                    tree_model.fit(X_train[selected_columns], y_train)
+                    feature_forests[f'FS{idx + 1}'].append((tree_model, selected_columns))
+        
+        # Evaluate F1 score for each of the six forests
+        for forest_name, forest in feature_forests.items():
+            predictions = []
+            for j in range(len(X)):
+                X_test_sample = X.iloc[j]
+                # Use each tree's selected columns to predict, and combine predictions with majority vote
+                votes = [model.predict(X_test_sample[selected_columns].to_frame().T)[0] for model, selected_columns in forest if set(selected_columns).issubset(X_test_sample.index)]
 
-                tree_model.fit(X_train.loc[:, selected_columns], y_train)
-                feature_models[f"FS{tree_idx + 1}"] = (tree_model, selected_columns)
-                models['DT-FS'][tree_idx + 1].extend(tree_model.predict(X_test.loc[:, selected_columns]))
+                predictions.append(mode(votes) if votes else 0)  # Majority vote, or 0 if no votes
 
-        trained_models[carbohydrate] = feature_models
-
-        for i in range(1,7):
-            tmp = calculate_metrics(models['DT-FS'][0], models['DT-FS'][i], carbohydrate_name=carbohydrate, model_name='DT-FS', n_estimators=1, misc=f'Outlier Detection - FS{i}', n_sample=len(y[carbohydrate] == 1))
+            tmp = calculate_metrics(
+                y[carbohydrate], predictions, 
+                carbohydrate_name=carbohydrate, model_name='DT-FS', 
+                n_estimators=1, 
+                misc=f'Outlier Detection - {forest_name}', 
+                n_sample=len(y[carbohydrate] == 1)
+            )
             tmp['negative_sensibility'] = negative_sensibility
             tmp['positive_sensibility'] = positive_sensibility
             tmp['k'] = k
-            output = pd.concat([output, tmp], ignore_index=True)
-        
-    return output, trained_models
+
+            f1 = tmp.loc[tmp["Carbohydrates"] == carbohydrate, "F1 score class 1"].iloc[0]
+            if f1 > best_f1_score:
+                best_f1_score = f1
+                best_forest_name = forest_name
+                best_forest = forest
+                best_tmp = tmp
+
+        if best_tmp is not None:
+            output = pd.concat([output, best_tmp], ignore_index=True)
+
+        trained_forests[carbohydrate] = best_forest
+
+    return output, trained_forests
 
 
 def find_best_parameters(X, y, param_grid, excluded=''):
@@ -254,7 +279,7 @@ def find_best_parameters(X, y, param_grid, excluded=''):
 
     all_trained_models = {}
     
-    print(f"\tNumber of combinations: {len(param_combinations)} -> ", end="")
+    print(f"\t\tNumber of combinations: {len(param_combinations)}. Advancement -> ", end="")
     i = 1
 
     for params in param_combinations:
@@ -263,36 +288,31 @@ def find_best_parameters(X, y, param_grid, excluded=''):
         print(i, end=', ')
         i = i + 1
 
-        performance, trained_models = train(X, y, negative_sensibility=neg_sensibility, positive_sensibility=pos_sensibility, k=k, excluded=excluded)
-
-        verbose_output = pd.concat([output, performance])
+        performance, forest_models = train(X, y, negative_sensibility=neg_sensibility, positive_sensibility=pos_sensibility, k=k, excluded=excluded)        
         
-        performance = performance.sort_values(by=['Carbohydrates', 'F1 score class 1', 'F1 score class 0', 'Balanced accuracy', 'Misc'], ascending=[True, False, False, False, True], axis=0)
-        indices = range(0, len(performance), len(performance['Misc'].unique()))
-        performance = performance.iloc[indices]  
         output = pd.concat([output, performance])
 
-
-        for carbohydrate, model_dict in trained_models.items():
+        for carbohydrate, trees in forest_models.items():
             if carbohydrate not in all_trained_models:
                 all_trained_models[carbohydrate] = {}
-            all_trained_models[carbohydrate][(neg_sensibility, pos_sensibility, k)] = model_dict
-
-    output_verbose = output.sort_values(by=['Carbohydrates', 'F1 score class 1', 'F1 score class 0', 'Balanced accuracy', 'Misc'], ascending=[True, False, False, False, True], axis=0)
-    indices = range(0, len(output), len(param_combinations)) # Takes the first row of each ordered group.
-    output = output.iloc[indices]
+            all_trained_models[carbohydrate][(neg_sensibility, pos_sensibility, k)] = trees
 
     best_models = {}
     for carbohydrate in output['Carbohydrates'].unique():
-        best_technique = output.loc[output['Carbohydrates'] == carbohydrate, 'Misc'].values[0][-3:]
         best_params = output.loc[output['Carbohydrates'] == carbohydrate, ['negative_sensibility', 'positive_sensibility', 'k']].values[0]
         best_params_tuple = tuple(best_params)
 
-        best_models[carbohydrate] = all_trained_models[carbohydrate][best_params_tuple][best_technique]
+        if best_params_tuple in all_trained_models[carbohydrate]:
+            best_models[carbohydrate] = all_trained_models[carbohydrate][best_params_tuple]
+        else:
+            print(f"\tNo model founded for the parameter {best_params_tuple} in {carbohydrate}.")
 
-    # print(best_models)
+    output = output.sort_values(by=['Carbohydrates', 'F1 score class 1', 'F1 score class 0', 'Balanced accuracy', 'Misc'], ascending=[True, False, False, False, True], axis=0)
+    output = output.iloc[range(0, len(output), 6)]
+
+    print("\n")
     
-    return output, output_verbose, best_models
+    return output, best_models
 
 
 def main(X, y):
@@ -314,18 +334,14 @@ def main(X, y):
     
     if params is not None:
         print("\tBest parameters founded.")
-        performance_OD1, trained_models_OD1 = train(X, y, best_params=params, 
-                                                    excluded=['D-GLUcose', 'D-FRUctose', 'L-XYLose'])
-
-        print(performance_OD1)
+        performance_OD1, trained_models_OD1 = train(X, y, best_params=params, excluded=['D-GLUcose', 'D-FRUctose', 'L-XYLose'])
     else:
         param_grid = {
             'neg_sensibility': [0.5],
             'pos_sensibility': [0.65, 0.8],
             'k': [35, 60, 140],
         }
-        performance_OD1, verbose_output, trained_models_OD1 = find_best_parameters(X, y, param_grid, excluded=['D-GLUcose', 'D-FRUctose', 'L-XYLose'])
-        save_to_excel(verbose_output, './Result/Performance/performance_OD1_verbose.xlsx')
+        performance_OD1, trained_models_OD1 = find_best_parameters(X, y, param_grid, excluded=['D-GLUcose', 'D-FRUctose', 'L-XYLose'])
 
     save_to_excel(performance_OD1, './Result/Performance/performance_OD1.xlsx')
     performance_OD1 = performance_OD1.reset_index()
@@ -335,12 +351,11 @@ def main(X, y):
     ###########################################################################
     # Load and process data for high positivity rate Outlier
     performance_OD2 = None
-    verbose_output2 = None
     trained_models_OD2 = {}
 
     if 'D-GLUcose' in y and 'D-FRUctose' in y:
         y_od2 = pd.concat([y['D-GLUcose'].to_frame(), y['D-FRUctose'].to_frame()], axis=1)
-        od_resampled = downsampling(X, y_od2, threshold_rebalance=0.4, threshold_OD=0.2)
+        od_resampled = downsampling(X, y_od2)
 
         params, searching = load_params('./Result/Performance/performance_OD2.xlsx')
         param_grid = {
@@ -354,9 +369,7 @@ def main(X, y):
             df = df.drop(carbohydrate, axis=1)
 
             if searching:
-                tmp1, tmp2, trained_models_OD2[carbohydrate] = find_best_parameters(X=df, y=y_col, param_grid=param_grid)
-                verbose_output2 = pd.concat([verbose_output2, tmp2]) if verbose_output2 is not None else tmp2
-                save_to_excel(verbose_output2, './Result/Performance/performance_OD2_verbose.xlsx')
+                tmp1, trained_models_OD2[carbohydrate] = find_best_parameters(X=df, y=y_col, param_grid=param_grid)
             else:
                 tmp1, trained_models_OD2[carbohydrate] = train(df, y_col, best_params=params)
                 tmp1 = process_performance(tmp1)
@@ -382,21 +395,15 @@ def main(X, y):
         }
 
         y_od3 = y['L-XYLose'].to_frame()
-        performance_OD3, verbose_output3, trained_models_OD3 = find_best_parameters(X, y_od3, param_grid)
+        performance_OD3, trained_models_OD3 = find_best_parameters(X, y_od3, param_grid)
 
         save_to_excel(performance_OD3, './Result/Performance/performance_OD3.xlsx')
-        save_to_excel(verbose_output3, './Result/Performance/performance_OD3_verbose.xlsx')
 
 
     ###########################################################################
-    # Extract best models
+
     trained_models = {**trained_models_OD1, **trained_models_OD2, **trained_models_OD3}
     performance_OD = pd.concat([performance_OD1, performance_OD2, performance_OD3], axis=0, ignore_index=False)
-
-    # for carbohydrate in performance_OD['Carbohydrates'].unique():
-    #     best_technique = performance_OD.loc[performance_OD['Carbohydrates'] == carbohydrate, 'Misc'].values[0][-3:]
-    #     trained_models[carbohydrate] = trained_models[carbohydrate][best_technique]
-
 
     return trained_models
 

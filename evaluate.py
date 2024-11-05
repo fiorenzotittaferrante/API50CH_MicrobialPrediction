@@ -1,4 +1,6 @@
 import pandas as pd
+from statistics import mode
+from sklearn.base import BaseEstimator
 
 
 def evaluate(trained_models, data, output=None):
@@ -21,11 +23,17 @@ def evaluate(trained_models, data, output=None):
 
     for carbohydrate, model in trained_models.items():
 
-        if isinstance(model, tuple):
-            features = model[1]
-            model = model[0]
-            predictions[carbohydrate] = model.predict(data.loc[:, features])
-        else:
+        if isinstance(model, list):    
+            model_predictions = []
+
+            for tree, features in model:
+                pred = tree.predict(data.loc[:, features])
+                model_predictions.append(pred)
+            
+            combined_predictions = [mode(pred) for pred in zip(*model_predictions)]
+            predictions[carbohydrate] = combined_predictions
+
+        elif isinstance(model, BaseEstimator):
             predictions[carbohydrate] = model.predict(data)
 
     out = pd.DataFrame(predictions)

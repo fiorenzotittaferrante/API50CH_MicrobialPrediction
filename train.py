@@ -58,15 +58,10 @@ def train(X, y, param_grid=None, params=None, misc=""):
     output_tmp = []
     trained_models = {}
 
-    print(y)
-    print("\n\n")
-
     for carbohydrate in y.columns:
 
         y_col = y[carbohydrate]
         loo = LeaveOneOut()
-
-        print(f"{carbohydrate}: {params}")
 
         if params is not None:
             # Se in params esiste una riga con il carboidrato carbohydrate:
