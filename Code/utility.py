@@ -86,17 +86,18 @@ def load_data(new_input_file):
     return X
 
 
-def save_to_excel(df, path):
+def save_to_excel(df, path, index=False):
     """
     Save a DataFrame to an Excel file.
 
     Args:
         df (pd.DataFrame): The DataFrame to be saved.
         path (str): The file path where the Excel file will be saved.
+        index (bool): Whether to include the index in the Excel file.
     """
-    
+
     with pd.ExcelWriter(path) as writer:
-        df.to_excel(writer, index=False)
+        df.to_excel(writer, index=index)
 
 
 def calculate_metrics(
