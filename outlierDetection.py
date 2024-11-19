@@ -258,7 +258,7 @@ def train(X, y, negative_sensibility=0.55, positive_sensibility=0.75, k=50, best
             ]
         )
 
-        new_row = feature_intersection(feature_matrix, y=None, sensibility=0.5)
+        new_row = feature_intersection(feature_matrix, y=None, sensibility=1)
         if isinstance(new_row, pd.Series):
             new_row = {col: new_row.iloc[i] if i < len(new_row) else 0
                        for i, col in enumerate(common_features.columns[:-1])}
@@ -443,7 +443,7 @@ def main(X, y):
     best_features = pd.concat([best_features_OD1, best_features_OD2, best_features_OD3], axis=0, ignore_index=False)
     best_features = best_features.dropna(how='all')  # Remove eventually some empty rows
 
-    save_to_excel(best_features, './Result/Performance/feature_importances_OD.xlsx', index=True) # Used in gene_ranking.py
+    save_to_excel(best_features, './Result/feature_importances_OD.xlsx', index=True) # Used in gene_ranking.py
 
     return trained_models
 
