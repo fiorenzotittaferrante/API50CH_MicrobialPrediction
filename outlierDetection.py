@@ -91,7 +91,7 @@ def feature_intersection(X, y, sensibility=1, two_tail=False):
     return selected_features
 
 
-def train(X, y, negative_sensibility=0.55, positive_sensibility=0.75, k=50, best_params=None, excluded=None):
+def train(X, y, negative_sensibility=0.55, positive_sensibility=0.75, k=50, best_params=None, excluded=''):
     """
     Train decision tree classifiers using Leave-One-Out (LOO) cross-validation with 
     outlier detection and feature selection. This function implements six feature selection 
@@ -139,7 +139,8 @@ def train(X, y, negative_sensibility=0.55, positive_sensibility=0.75, k=50, best
     """
 
     output = pd.DataFrame(columns=['Carbohydrates', 'Model', 'Estimators', 'Pos real', 'Pos pred', 'Precision', 'Recall', 'F1 score class 0', 'F1 score class 1', 'Micro', 'Macro', 'Balanced accuracy', 'Misc'])
-    common_features = pd.DataFrame(columns=X.columns)
+    columns = ['Carbohydrates'] + list(X.columns)
+    common_features = pd.DataFrame(columns=columns)
     trained_forests = {}
 
     for carbohydrate in y.columns:
@@ -149,7 +150,7 @@ def train(X, y, negative_sensibility=0.55, positive_sensibility=0.75, k=50, best
         best_tmp = None
         best_features = None
 
-        if excluded is None or carbohydrate in excluded:
+        if carbohydrate in excluded:
             continue
             
         if best_params is not None:
@@ -265,6 +266,7 @@ def train(X, y, negative_sensibility=0.55, positive_sensibility=0.75, k=50, best
 
         new_row['Carbohydrates'] = carbohydrate
         common_features = pd.concat([common_features, pd.DataFrame([new_row])], ignore_index=True)
+        print(common_features)
 
     return output, trained_forests, common_features.set_index('Carbohydrates')
 
@@ -359,22 +361,24 @@ def main(X, y):
     trained_models_OD1 = {}
     best_features_OD1 = pd.Series()
 
-    params, searching = load_params('./Result/Performance/performance_OD1.xlsx')
+    # params, searching = load_params('./Result/Performance/performance_OD1.xlsx')
     
-    if params is not None:
-        print("\tBest parameters founded.")
-        performance_OD1, trained_models_OD1, best_features_OD1 = train(X, y, best_params=params, excluded=['D-GLUcose', 'D-FRUctose', 'L-XYLose'])
-    else:
-        param_grid = {
-            'neg_sensibility': [0.5],
-            'pos_sensibility': [0.65, 0.8],
-            'k': [35] #, 60, 140],
-        }
-        performance_OD1, trained_models_OD1, best_features_OD1 = find_best_parameters(X, y, param_grid, excluded=['D-GLUcose', 'D-FRUctose', 'L-XYLose'])
+    # if params is not None:
+    #     print("\tBest parameters founded.")
+    #     performance_OD1, trained_models_OD1, best_features_OD1 = train(X, y, best_params=params, excluded=['D-GLUcose', 'D-FRUctose', 'L-XYLose'])
+    # else:
+    #     param_grid = {
+    #         'neg_sensibility': [0.5],
+    #         'pos_sensibility': [0.65, 0.8],
+    #         'k': [35] #, 60, 140],
+    #     }
+    #     performance_OD1, trained_models_OD1, best_features_OD1 = find_best_parameters(X, y, param_grid, excluded=['D-GLUcose', 'D-FRUctose', 'L-XYLose'])
 
-    save_to_excel(performance_OD1, './Result/Performance/performance_OD1.xlsx')
-    performance_OD1 = performance_OD1.reset_index()
-    performance_OD1 = process_performance(performance_OD1)
+    # save_to_excel(performance_OD1, './Result/Performance/performance_OD1.xlsx')
+    # performance_OD1 = performance_OD1.reset_index()
+    # performance_OD1 = process_performance(performance_OD1)
+
+    # save_to_excel(best_features_OD1, './Result/feature_importances_OD1_backup.xlsx', index=True)
 
 
     ###########################################################################
@@ -386,12 +390,13 @@ def main(X, y):
 
     if 'D-GLUcose' in y and 'D-FRUctose' in y:
         y_od2 = pd.concat([y['D-GLUcose'].to_frame(), y['D-FRUctose'].to_frame()], axis=1)
+
         od_resampled = downsampling(X, y_od2)
 
         params, searching = load_params('./Result/Performance/performance_OD2.xlsx')
         param_grid = {
-            'neg_sensibility': [0.7, 0.8],
-            'pos_sensibility': [0.5, 0.65],
+            'neg_sensibility': [0.7], #, 0.8],
+            'pos_sensibility': [0.65], #, 0.5],
             'k': [30, 50, 140],
         } if searching else None
 
@@ -427,7 +432,7 @@ def main(X, y):
         }
 
         y_od3 = y['L-XYLose'].to_frame()
-        performance_OD3, trained_models_OD3 = find_best_parameters(X, y_od3, param_grid)
+        performance_OD3, trained_models_OD3, best_features_OD3 = find_best_parameters(X, y_od3, param_grid)
 
         save_to_excel(performance_OD3, './Result/Performance/performance_OD3.xlsx')
 

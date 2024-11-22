@@ -52,18 +52,18 @@ def predict(models, path_file):
     save_to_excel(result, path="Result/prediction.xlsx")
 
     print(result)
-
+    
 
 if __name__ == "__main__":
 
     models_path = "Data/models.pkl"
     dataset_folder = "Data/"
 
-    if os.path.exists(models_path):
-        models = load_models(models_path)
-    else:
-        models = train_models(dataset_folder)
-        save_models(models, models_path)
+    # if os.path.exists(models_path):
+        # models = load_models(models_path)
+    # else:
+    models = train_models(dataset_folder)
+    save_models(models, models_path)
 
     # predict(models, "Data/new_input.xlsx")
 
