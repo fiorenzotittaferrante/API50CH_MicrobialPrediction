@@ -27,7 +27,7 @@ def simple_train(X, y, params):
         dict: A dictionary where keys are carbohydrate names and values are arrays of feature importances corresponding to each carbohydrate.
     """
     
-    feature_importance = {col: 0 for col in y.columns}
+    feature_importances = {col: 0 for col in y.columns}
             
     for carbohydrate in y.columns:
 
@@ -36,9 +36,9 @@ def simple_train(X, y, params):
 
         rfclf = RandomForestClassifier(n_estimators=n_estimators, max_depth=None, min_samples_split=2, random_state=1234, bootstrap=False)
         rfclf.fit(X, y_col)
-        feature_importance[carbohydrate] = rfclf.feature_importances_
+        feature_importances[carbohydrate] = rfclf.feature_importances_
         
-    return feature_importance
+    return feature_importances
 
 
 def get_feature_importances(dataset_folder):
@@ -58,15 +58,15 @@ def get_feature_importances(dataset_folder):
     
     X, y_balanced, resampled_dataframes, _ = process_data.main(dataset_folder)
 
-    feature_importance = pd.DataFrame(columns=X.columns)
-    feature_importance_balanced = pd.DataFrame(columns=X.columns)
-    feature_importance_resampled = pd.DataFrame(columns=X.columns)
+    feature_importances = pd.DataFrame(columns=X.columns)
+    feature_importances_balanced = pd.DataFrame(columns=X.columns)
+    feature_importances_resampled = pd.DataFrame(columns=X.columns)
 
 
     # Normal training.
     if os.path.exists('./Result/Performance/performance_classic.xlsx'):
         performance_classic = pd.read_excel('./Result/Performance/performance_classic.xlsx').set_index('Carbohydrates')
-        feature_importance_balanced = simple_train(X, y_balanced, performance_classic)
+        feature_importances_balanced = simple_train(X, y_balanced, performance_classic)
 
     else:
         print('Train firstly the models.')
@@ -85,19 +85,19 @@ def get_feature_importances(dataset_folder):
             tmp = simple_train(df, y_col, performance_resampled)
             tmp = pd.DataFrame(tmp).T
             tmp.columns = X.columns
-            feature_importance_resampled = pd.concat([feature_importance_resampled, tmp], axis=0)
+            feature_importances_resampled = pd.concat([feature_importances_resampled, tmp], axis=0)
 
     else:
         print('Train firstly the models.')
         exit(-1)
 
-    feature_importance_balanced = pd.DataFrame(feature_importance_balanced)
-    feature_importance_resampled = pd.DataFrame(feature_importance_resampled)
+    feature_importances_balanced = pd.DataFrame(feature_importances_balanced)
+    feature_importances_resampled = pd.DataFrame(feature_importances_resampled)
 
-    feature_importance = pd.concat([feature_importance_balanced, feature_importance_resampled], axis=0)
-    save_to_excel(feature_importance, "./Result/feature_importances.xlsx", index=True)      
+    feature_importances = pd.concat([feature_importances_balanced, feature_importances_resampled], axis=0)
+    save_to_excel(feature_importances, "./Result/feature_importances.xlsx", index=True)      
 
-    return feature_importance
+    return feature_importances
 
 
 def process_strains_coverage(feature_importances):
@@ -262,13 +262,13 @@ def main():
     if os.path.exists('./Result/feature_importances.xlsx'):
         feature_importances = pd.read_excel('./Result/feature_importances.xlsx').set_index('Unnamed: 0').rename_axis(['Carbohydrates'])
     else:
-        feature_importance = get_feature_importances("Data/")
+        feature_importances = get_feature_importances("Data/")
 
     if os.path.exists('./Result/feature_importances_OD.xlsx'):
         feature_importances_OD = pd.read_excel('./Result/feature_importances_OD.xlsx').set_index('Unnamed: 0').rename_axis(['Carbohydrates'])
 
     print('Info: all result will be saved in Result/Coverages/')
-    # process_strains_coverage(feature_importances)
+    process_strains_coverage(feature_importances)
     process_strains_coverage(feature_importances_OD)
 
     # download_stop_words()
