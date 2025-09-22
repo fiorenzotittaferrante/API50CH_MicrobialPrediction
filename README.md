@@ -51,7 +51,7 @@ This project implements a complete workflow for using AFLP profiles (simulated v
 For each output variable $o$ (e.g., the response to a single carbohydrate), we compute the positivity rate $\rho$ as:
 
 $$
-\rho = \frac{\text{NumberOfPositiveSamples}}{\text{TotalNumberOfSamples}}
+\rho = \frac{\text{Number of positive samples}}{\text{Total number of samples}}
 $$
 
 <p align="center">
